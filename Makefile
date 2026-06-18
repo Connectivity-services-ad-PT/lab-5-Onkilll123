@@ -1,31 +1,31 @@
-.PHONY: install lint build run compose-up compose-down logs test-compose
+.PHONY: compose-up compose-down logs test-compose build clean
 
-# Install Node dependencies for Prism/Spectral/Newman
-install:
-	npm install
-
-# Lint OpenAPI contracts with Spectral
-lint:
-	npx spectral lint contracts/*.yaml
-
-# Build Docker image for API only
-build:
-	docker build -t fit4110/iot-ingestion:lab05 .
-
-# Run API container standalone (not via compose)
-run:
-	docker run --rm --name fit4110-api-lab05 -p 8000:8000 --env-file .env.example fit4110/iot-ingestion:lab05
-
-# Compose commands
-compose-up:
+compose-up: ## Build và chạy toàn bộ Compose stack
+	cp -n .env.example .env 2>/dev/null || true
 	docker compose up -d --build
 
-compose-down:
-	docker compose down
+compose-down: ## Stop và xoá stack
+	docker compose down -v
 
-logs:
+logs: ## Xem log tất cả service
 	docker compose logs -f
 
-# Run Newman tests on compose stack
-test-compose:
-	npm run test:compose
+build: ## Build image
+	docker compose build
+
+test-compose: ## Chạy Newman test trên stack Compose
+	npx newman run postman/FIT4110_lab05_gate.postman_collection.json \
+		--environment postman/environments/FIT4110_lab05_local.postman_environment.json \
+		--reporters cli,junit \
+		--reporter-junit-export reports/newman-lab05-compose.xml
+
+clean: ## Xoá image và volume
+	docker compose down -v --rmi local
+
+health: ## Kiểm tra health tất cả service
+	@echo "=== API ==="
+	@curl -sf http://localhost:8000/health | python -m json.tool || echo "API not ready"
+	@echo "=== AI ==="
+	@curl -sf http://localhost:9000/health | python -m json.tool || echo "AI not ready"
+	@echo "=== DB ==="
+	@docker exec fit4110-db-lab05 pg_isready -U lab05 -d gatedb || echo "DB not ready"

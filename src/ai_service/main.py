@@ -1,44 +1,50 @@
 """
-Simple AI service mock for Lab 05.
-
-This service exposes two endpoints:
-
-* `GET /health` – returns status, service name and version.
-* `POST /predict` – returns a dummy list of detected objects and confidences.
-
-You can replace this file with your actual inference code (e.g. YOLOv8 model).
+FIT4110 Lab 05 — AI Service mock for team-gate
+Provides /health and /predict endpoints (dummy risk assessment).
 """
+import json
+import random
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List
+PORT = 9000
 
-SERVICE_NAME = "ai-service"
-SERVICE_VERSION = "0.5.0"
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass  # suppress access log
 
-app = FastAPI(
-    title="FIT4110 Lab 05 - AI Service",
-    version=SERVICE_VERSION,
-    description="Mock AI service used in Docker Compose stack.",
-)
+    def send_json(self, code, data):
+        body = json.dumps(data).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_json(200, {"status": "ok", "service": "gate-ai-mock", "version": "0.5.0"})
+        else:
+            self.send_json(404, {"error": "not found"})
 
-class Prediction(BaseModel):
-    objects: List[str]
-    confidence: List[float]
-
-
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok", "service": SERVICE_NAME, "version": SERVICE_VERSION}
-
-
-@app.post("/predict", response_model=Prediction)
-def predict() -> Prediction:
-    # This dummy implementation always returns two objects
-    return Prediction(objects=["person", "bicycle"], confidence=[0.98, 0.85])
-
+    def do_POST(self):
+        if self.path == "/predict":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            card_id = body.get("card_id", "")
+            # Simple mock: expired cards → high risk
+            if "EXPIRED" in card_id.upper():
+                risk = "high"
+            else:
+                risk = random.choice(["low", "low", "low", "medium"])
+            self.send_json(200, {
+                "card_id": card_id,
+                "risk_level": risk,
+                "model": "gate-risk-mock-v1",
+                "confidence": round(random.uniform(0.75, 0.99), 2),
+            })
+        else:
+            self.send_json(404, {"error": "not found"})
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=9000)
+    print(f"[AI Service] Starting on port {PORT}...")
+    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
